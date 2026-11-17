@@ -11,6 +11,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -24,7 +25,9 @@ import (
 	"github.com/juicity/juicity/common"
 	"github.com/juicity/juicity/config"
 	"github.com/juicity/juicity/pkg/client/dialer"
+	"github.com/juicity/juicity/pkg/client/hopping"
 	"github.com/juicity/juicity/pkg/log"
+	"github.com/juicity/juicity/pkg/portlist"
 	"github.com/juicity/juicity/server"
 )
 
@@ -37,12 +40,10 @@ var (
 		Use:   "run",
 		Short: "To run juicity-client in the foreground.",
 		Run: func(cmd *cobra.Command, args []string) {
-			// TODO: Some users reported that enabling GSO on the client would affect the performance of watching YouTube, so we disabled it by default.
 			if _, ok := os.LookupEnv("QUIC_GO_DISABLE_GSO"); !ok {
 				os.Setenv("QUIC_GO_DISABLE_GSO", "1")
 			}
 			arguments := shared.GetArguments()
-			// Config.
 			conf, err := arguments.GetConfig()
 			if err != nil {
 				logger.Fatal().
@@ -50,7 +51,6 @@ var (
 					Msg("Failed to read config")
 			}
 
-			// Logger.
 			if logger, err = arguments.GetLogger(conf.LogLevel); err != nil {
 				logger.Fatal().
 					Err(err).
@@ -74,9 +74,65 @@ var (
 )
 
 func Serve(conf *config.Config) error {
-	if conf.Sni == "" {
-		conf.Sni, _, _ = net.SplitHostPort(conf.Server)
+	host, portStr, err := portlist.HostOfServer(conf.Server)
+	if err != nil {
+		return fmt.Errorf("parse server: %w", err)
 	}
+
+	var ports []int
+	if conf.ServerPorts != "" {
+		ports, err = portlist.Parse(conf.ServerPorts)
+		if err != nil {
+			return fmt.Errorf("parse server_ports: %w", err)
+		}
+	} else if portStr != "" {
+		p, err := strconv.Atoi(portStr)
+		if err != nil {
+			return fmt.Errorf("parse server port: %w", err)
+		}
+		ports = []int{p}
+	} else {
+		return fmt.Errorf("server must include a port, or set server_ports")
+	}
+
+	startPort := ports[0]
+	if portStr != "" {
+		if p, e := strconv.Atoi(portStr); e == nil {
+			startPort = p
+		}
+	}
+	// Initial proxyAddress for outbound (must be host:port single).
+	proxyAddress := net.JoinHostPort(host, strconv.Itoa(startPort))
+
+	if conf.Sni == "" {
+		conf.Sni = host
+	}
+
+	hopInterval := 30 * time.Second
+	if conf.HopInterval != "" {
+		d, err := time.ParseDuration(conf.HopInterval)
+		if err != nil {
+			return fmt.Errorf("parse hop_interval: %w", err)
+		}
+		if d < 5*time.Second {
+			// Match common Hy2 lower bound; adjust if you want.
+			d = 5 * time.Second
+		}
+		hopInterval = d
+	}
+
+	var hopCtrl *hopping.Controller
+	if len(ports) > 1 {
+		hopCtrl = hopping.NewController(host, ports, startPort)
+		hopCtrl.Start(hopInterval)
+		logger.Info().
+			Str("host", host).
+			Int("ports", len(ports)).
+			Dur("hop_interval", hopInterval).
+			Msg("port hopping enabled (smooth write-path migration)")
+		defer hopCtrl.Stop()
+	}
+
 	tlsConfig := &tls.Config{
 		NextProtos:         []string{"h3"},
 		MinVersion:         tls.VersionTLS13,
@@ -102,8 +158,9 @@ func Serve(conf *config.Config) error {
 			return nil
 		}
 	}
-	d, err := juicity.NewDialer(dialer.NewClientDialer(conf), protocol.Header{
-		ProxyAddress: conf.Server,
+
+	d, err := juicity.NewDialer(dialer.NewClientDialer(conf, hopCtrl), protocol.Header{
+		ProxyAddress: proxyAddress,
 		Feature1:     conf.CongestionControl,
 		TlsConfig:    tlsConfig,
 		User:         conf.Uuid,
@@ -141,6 +198,7 @@ func Serve(conf *config.Config) error {
 	}
 	if len(conf.Forward) != 0 {
 		for local, remote := range conf.Forward {
+			local, remote := local, remote
 			forwarder, err := server.NewForwarder(server.ForwarderOptions{
 				Logger:     logger,
 				Dialer:     d,
@@ -168,11 +226,7 @@ func Serve(conf *config.Config) error {
 }
 
 func init() {
-	// version
 	rootCmd.Version = shared.GetVersion(cgoEnabled)
-
-	// cmds
 	rootCmd.AddCommand(runCmd)
-
 	shared.InitArgumentsFlags(runCmd)
 }

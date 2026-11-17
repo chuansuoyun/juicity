@@ -12,6 +12,8 @@ var (
 type Config struct {
 	// Client
 	Server                string            `json:"server"`
+	ServerPorts           string            `json:"server_ports,omitempty"` // e.g. "20000-30000" or "443,20000-20010"
+	HopInterval           string            `json:"hop_interval,omitempty"` // e.g. "30s"; used when server_ports has >1 port
 	Uuid                  string            `json:"uuid"`
 	Password              string            `json:"password"`
 	Sni                   string            `json:"sni"`

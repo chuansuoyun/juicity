@@ -1,51 +1,51 @@
 package config
 
 import (
-	"encoding/json"
-	"os"
+    "encoding/json"
+    "os"
 )
 
 var (
-	Version = "unknown"
+    Version = "unknown"
 )
 
 type Config struct {
-	// Client
-	Server                string            `json:"server"`
-	ServerPorts           string            `json:"server_ports,omitempty"` // e.g. "20000-30000" or "443,20000-20010"
-	HopInterval           string            `json:"hop_interval,omitempty"` // e.g. "30s"; used when server_ports has >1 port
-	Uuid                  string            `json:"uuid"`
-	Password              string            `json:"password"`
-	Sni                   string            `json:"sni"`
-	AllowInsecure         bool              `json:"allow_insecure"`
-	PinnedCertChainSha256 string            `json:"pinned_certchain_sha256"`
-	ProtectPath           string            `json:"protect_path"`
-	Forward               map[string]string `json:"forward"`
+    // Client
+    Server                string            `json:"server"`
+    ServerPorts           string            `json:"server_ports,omitempty"` // e.g. "20000-30000" or "443,20000-20010"
+    HopInterval           string            `json:"hop_interval,omitempty"` // e.g. "30s"; used when server_ports has >1 port
+    Uuid                  string            `json:"uuid"`
+    Password              string            `json:"password"`
+    Sni                   string            `json:"sni"`
+    AllowInsecure         bool              `json:"allow_insecure"`
+    PinnedCertChainSha256 string            `json:"pinned_certchain_sha256"`
+    ProtectPath           string            `json:"protect_path"`
+    Forward               map[string]string `json:"forward"`
 
-	// Server
-	Users                 map[string]string `json:"users"`
-	Certificate           string            `json:"certificate"`
-	PrivateKey            string            `json:"private_key"`
-	Fwmark                string            `json:"fwmark"`
-	SendThrough           string            `json:"send_through"`
-	DialerLink            string            `json:"dialer_link"`
-	DisableOutboundUdp443 bool              `json:"disable_outbound_udp443"`
+    // Server
+    Users                 map[string]string `json:"users"`
+    Certificate           string            `json:"certificate"`
+    PrivateKey            string            `json:"private_key"`
+    Fwmark                string            `json:"fwmark"`
+    SendThrough           string            `json:"send_through"`
+    DialerLink            string            `json:"dialer_link"`
+    DisableOutboundUdp443 bool              `json:"disable_outbound_udp443"`
 
-	// Common
-	Listen            string `json:"listen"`
-	CongestionControl string `json:"congestion_control"`
-	LogLevel          string `json:"log_level"`
+    // Common
+    Listen            string `json:"listen"`
+    CongestionControl string `json:"congestion_control"`
+    LogLevel          string `json:"log_level"`
 }
 
 func ReadConfig(p string) (*Config, error) {
-	f, err := os.Open(p)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	var c Config
-	if err = json.NewDecoder(f).Decode(&c); err != nil {
-		return nil, err
-	}
-	return &c, nil
+    f, err := os.Open(p)
+    if err != nil {
+        return nil, err
+    }
+    defer f.Close()
+    var c Config
+    if err = json.NewDecoder(f).Decode(&c); err != nil {
+        return nil, err
+    }
+    return &c, nil
 }
